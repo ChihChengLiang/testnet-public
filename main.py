@@ -65,9 +65,9 @@ def write_public_config_for_bootstrap(accounts, bootstrap_enodes):
                         for account in accounts}
     config["eth"]["genesis"] = genesis
     config["discovery"]["bootstrap_nodes"] = bootstrap_enodes
-    with open(f"{CWD}/public/config.yaml", "w") as f:
+    with open(f"{CWD}/user/data/config/config.yaml", "w") as f:
         f.write(yaml.dump(config, default_flow_style=False))
-        print("Created public info at public/config.yaml")
+        print("Created config.yaml at user/data/config")
 
 
 def to_enode(ip, privkey):
