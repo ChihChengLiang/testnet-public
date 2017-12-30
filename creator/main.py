@@ -12,7 +12,6 @@ from devp2p.utils import host_port_pubkey_to_uri
 CWD = os.path.dirname(sys.argv[0])
 NUM_ACCOUNTS = 10
 DEFAULT_BALANCE = "50000000000000000000000000000"
-NUM_BOOTSTRAPS = 5
 
 
 def create_default_genesis():
@@ -49,14 +48,14 @@ def create_default_config():
     return config
 
 
-def write_private_config(account_private_keys, bootstrap_node_private_keys):
+def write_private_config(account_info, bootstrap_info):
     config = {}
-    config["account_private_keys"] = account_private_keys
-    config["bootstrap_node_private_keys"] = bootstrap_node_private_keys
+    config["account_info"] = [{f"0x{account}": key}
+                              for account, key in account_info]
+    config["bootstrap_info"] = bootstrap_info
     with open(f"{CWD}/private/private.yaml", "w") as f:
         f.write(yaml.dump(config, default_flow_style=False))
         print("Created private info at private/config.yaml . Keep this safe and give validator money using accounts in it.")
-
 
 
 def write_public_config_for_bootstrap(accounts, bootstrap_enodes):
@@ -64,34 +63,63 @@ def write_public_config_for_bootstrap(accounts, bootstrap_enodes):
     genesis = create_default_genesis()
     genesis["alloc"] = {account: {"balance": DEFAULT_BALANCE}
                         for account in accounts}
-    config["genesis"] = genesis
+    config["eth"]["genesis"] = genesis
     config["discovery"]["bootstrap_nodes"] = bootstrap_enodes
     with open(f"{CWD}/public/config.yaml", "w") as f:
         f.write(yaml.dump(config, default_flow_style=False))
         print("Created public info at public/config.yaml")
-        print("1. You still need to configure the ips of real deployed bootstrap nodes.")
-        print("2. Then distribute this file to your user.")
 
 
-def to_enode(privkey):
+def to_enode(ip, privkey):
     node_pubkey = privtopub_raw(privkey)
-    enode = str(host_port_pubkey_to_uri('0.0.0.0', 30303, node_pubkey))
-    enode_replaced =enode # enode.replace('0.0.0.0', '__INSERT_IP_HERE__')
-    return enode_replaced
+    enode = host_port_pubkey_to_uri(ip, 30303, node_pubkey).decode("utf-8")
+    return enode
 
+
+def ask_ips():
+    example_ips = "11.22.33.44, 55.66.77.88, 123.123.123.123"
+    question = (
+        "Enter ips of your machines for bootstrap nodes"
+        "(domain name not allowed),"
+        f"separeted with comma ({example_ips}):"
+    )
+    answer = input(question)
+    boostrap_ips_raw = answer if answer != "" else example_ips
+    bootstrap_ips = boostrap_ips_raw.replace(" ", "").split(",")
+    return bootstrap_ips
+
+
+def show_bootstrap_deploy_guide(bootstrap_info):
+    for ip, privhex in bootstrap_info.items():
+        print("Deploy this bootstrap node on", ip)
+        print(f"""
+        ```
+        docker run -d \\
+            -v $PWD/data/config:/root/.config/pyethapp \\
+            -p 30303:30303 \\
+            -p 30303:30303/udp \\
+            -p 8545:8545 \\
+            --name pyethapp \\
+            ethresearch/pyethapp-research:alpine \\
+            pyethapp -c "node.privkey_hex={privhex}" run
+        ```""")
 
 
 def create_config_for_bootstrap():
-    bootstrap_node_private_keys = [
-        token_hex(32) for _ in range(NUM_BOOTSTRAPS)]
+    bootstrap_ips = ask_ips()
+    bootstrap_info = {ip: token_hex(32) for ip in bootstrap_ips}
+
     account_private_keys = [token_hex(32) for _ in range(NUM_ACCOUNTS)]
     accounts = [encode_hex(privtoaddr(key)) for key in account_private_keys]
+    accounts_info = zip(accounts, account_private_keys)
 
-    bootstrap_enodes = [to_enode(key) for key in bootstrap_node_private_keys]
+    bootstrap_enodes = [to_enode(ip, key)
+                        for ip, key in bootstrap_info.items()]
 
-    write_private_config(account_private_keys, bootstrap_node_private_keys)
+    write_private_config(accounts_info, bootstrap_info)
     write_public_config_for_bootstrap(accounts, bootstrap_enodes)
-    
+
+    show_bootstrap_deploy_guide(bootstrap_info)
 
 
 if __name__ == '__main__':
